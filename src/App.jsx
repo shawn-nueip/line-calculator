@@ -1,9 +1,47 @@
 import React, { useState, useMemo } from 'react';
 import {
-  Calculator, Info, ChevronRight, MessageSquare,
-  Users, History, DollarSign, BarChart3, ClipboardList, TrendingUp,
+  Calculator, ChevronRight,
+  Users, BarChart3, ClipboardList, TrendingUp,
   Tag
 } from 'lucide-react';
+
+const DEFAULT_HISTORY_COUNTS = [
+  { year: 2026, month: 12, count: '6010' },
+  { year: 2026, month: 11, count: '6010' },
+  { year: 2026, month: 10, count: '6010' },
+  { year: 2026, month: 9, count: '6010' },
+  { year: 2026, month: 8, count: '6010' },
+  { year: 2026, month: 7, count: '6010' },
+  { year: 2026, month: 6, count: '6010' },
+  { year: 2026, month: 5, count: '6010' },
+  { year: 2026, month: 4, count: '6010' },
+  { year: 2026, month: 3, count: '6010' },
+];
+
+const toMonthKey = (year, month) => `${year}-${month}`;
+
+const createRangeEntries = (startYear, startMonth, monthCount, existingCountMap) => {
+  const entries = [];
+  let year = startYear;
+  let month = startMonth;
+
+  for (let i = 0; i < monthCount; i += 1) {
+    const key = toMonthKey(year, month);
+    entries.push({
+      year,
+      month,
+      count: existingCountMap[key] ?? '',
+    });
+
+    month -= 1;
+    if (month <= 0) {
+      month = 12;
+      year -= 1;
+    }
+  }
+
+  return entries;
+};
 
 const App = () => {
   // 計費級距數據
@@ -68,7 +106,12 @@ const App = () => {
   const [activeTab, setActiveTab] = useState('history'); // 預設改為顯示歷史數據
   const [friendsInput, setFriendsInput] = useState('1000');
   const [frequencyInput, setFrequencyInput] = useState('4');
-  const [historyInput, setHistoryInput] = useState(`2026\t3\t1130917\n2026\t2\t1767083\n2026\t1\t2122659\n2025\t12\t2199952\n2025\t11\t1986951\n2025\t10\t2005291\n2025\t9\t1989364\n2025\t8\t1948255\n2025\t7\t2043215\n2025\t6\t1911624`);
+  const [startYearInput, setStartYearInput] = useState('2026');
+  const [startMonthInput, setStartMonthInput] = useState('12');
+  const [monthCountInput, setMonthCountInput] = useState('10');
+  const [historyEntries, setHistoryEntries] = useState(() =>
+    DEFAULT_HISTORY_COUNTS.map((item) => ({ ...item })),
+  );
 
   // 計算單次即時結果
   const friends = useMemo(() => {
@@ -83,18 +126,40 @@ const App = () => {
 
   const instantCalc = useMemo(() => calculateCostDetail(friends * frequency), [friends, frequency]);
 
+  const applyMonthRange = () => {
+    const safeYear = Math.max(2000, parseInt(startYearInput, 10) || 2026);
+    const safeMonth = Math.min(12, Math.max(1, parseInt(startMonthInput, 10) || 1));
+    const safeMonthCount = Math.min(36, Math.max(1, parseInt(monthCountInput, 10) || 1));
+    const existingCountMap = historyEntries.reduce((acc, item) => {
+      acc[toMonthKey(item.year, item.month)] = item.count;
+      return acc;
+    }, {});
+
+    setStartYearInput(String(safeYear));
+    setStartMonthInput(String(safeMonth));
+    setMonthCountInput(String(safeMonthCount));
+    setHistoryEntries(createRangeEntries(safeYear, safeMonth, safeMonthCount, existingCountMap));
+  };
+
+  const inputPanelMaxHeight = useMemo(() => {
+    const currentCount = Math.min(36, Math.max(1, parseInt(monthCountInput, 10) || 1));
+    return Math.min(420, Math.max(180, currentCount * 42));
+  }, [monthCountInput]);
+
   // 解析並計算歷史數據
   const historyAnalysis = useMemo(() => {
-    const lines = historyInput.trim().split('\n');
-    const records = lines.map(line => {
-      const parts = line.split(/\s+/);
-      if (parts.length < 3) return null;
-      const year = parts[0];
-      const month = parts[1];
-      const count = parseInt(parts[2].replace(/,/g, ''));
-      if (isNaN(count)) return null;
-      return { year, month, count, ...calculateCostDetail(count) };
-    }).filter(r => r !== null);
+    const records = historyEntries
+      .map((item) => {
+        const count = parseInt(item.count.replace(/,/g, ''), 10);
+        if (Number.isNaN(count)) return null;
+        return {
+          year: String(item.year),
+          month: String(item.month),
+          count,
+          ...calculateCostDetail(count),
+        };
+      })
+      .filter((r) => r !== null);
 
     if (records.length === 0) return null;
 
@@ -107,7 +172,7 @@ const App = () => {
     const minCost = Math.min(...records.map(r => r.totalCost));
 
     return { records, avgMessages, avgCost, maxCost, minCost, avgUnitPrice };
-  }, [historyInput]);
+  }, [historyEntries]);
 
   const highVolumeUnitPrice = historyAnalysis?.records.find((r) => r.count > 2000000)?.unitPrice;
   const lowVolumeUnitPrice = historyAnalysis?.records.find((r) => r.count < 1200000)?.unitPrice;
@@ -123,7 +188,7 @@ const App = () => {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-slate-800">LINE 費用成本計算機</h1>
-              <p className="text-slate-500 text-sm">階梯計價與歷史成本控管分析-以2026/3月公告價格估算</p>
+              <p className="text-slate-500 text-sm">階梯計價與歷史成本控管分析（使用模擬資料）</p>
             </div>
           </div>
 
@@ -227,12 +292,69 @@ const App = () => {
                   <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
                     <ClipboardList className="w-5 h-5 text-purple-500" /> 數據輸入
                   </h2>
-                  <p className="text-[10px] text-slate-400 mb-4">格式：年 月 訊息量 (以空白或 Tab 分隔)</p>
-                  <textarea
-                    value={historyInput}
-                    onChange={(e) => setHistoryInput(e.target.value)}
-                    className="w-full h-96 p-4 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono focus:ring-2 focus:ring-purple-500 outline-none resize-none transition-all"
-                  />
+                  <p className="text-[10px] text-slate-400 mb-4">先選擇起始年月與月數，再逐月填入訊息量。</p>
+                  <div className="grid grid-cols-3 gap-2 mb-3">
+                    <div>
+                      <label className="block text-[10px] text-slate-500 mb-1">起始年</label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={startYearInput}
+                        onChange={(e) => setStartYearInput(e.target.value.replace(/[^\d]/g, ''))}
+                        className="w-full px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-500 mb-1">起始月</label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={startMonthInput}
+                        onChange={(e) => setStartMonthInput(e.target.value.replace(/[^\d]/g, ''))}
+                        className="w-full px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] text-slate-500 mb-1">月數</label>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={monthCountInput}
+                        onChange={(e) => setMonthCountInput(e.target.value.replace(/[^\d]/g, ''))}
+                        className="w-full px-2 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-purple-500"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    onClick={applyMonthRange}
+                    className="w-full mb-3 px-3 py-2 rounded-lg bg-purple-600 text-white text-xs font-bold hover:bg-purple-700 transition-colors"
+                  >
+                    產生連續年月
+                  </button>
+
+                  <div
+                    className="space-y-2 overflow-y-auto pr-1"
+                    style={{ maxHeight: `${inputPanelMaxHeight}px` }}
+                  >
+                    {historyEntries.map((item, index) => (
+                      <div key={`${item.year}-${item.month}`} className="grid grid-cols-[72px_1fr] gap-2 items-center">
+                        <div className="text-[11px] font-semibold text-slate-500">{item.year}/{item.month}</div>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={item.count}
+                          onChange={(e) => {
+                            const next = e.target.value.replace(/[^\d]/g, '');
+                            setHistoryEntries((prev) =>
+                              prev.map((entry, i) => (i === index ? { ...entry, count: next } : entry)),
+                            );
+                          }}
+                          className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-purple-500"
+                          placeholder="輸入訊息量"
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </section>
               </div>
 
@@ -248,7 +370,7 @@ const App = () => {
                       </div>
                     </div>
                     <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm">
-                      <p className="text-[10px] text-slate-400 mb-1">10個月平均月費</p>
+                      <p className="text-[10px] text-slate-400 mb-1">{historyAnalysis.records.length}個月平均月費</p>
                       <p className="text-2xl font-black text-slate-800">${Math.round(historyAnalysis.avgCost).toLocaleString()}</p>
                       <p className="text-[10px] text-slate-400 mt-2">常態預算配置</p>
                     </div>
@@ -317,7 +439,7 @@ const App = () => {
 
         <footer className="mt-8 pt-8 border-t border-slate-200 text-center text-slate-400 text-[10px]">
           <p>※ 平均單價公式 = (基本月費 $1,200 + 該月超額費用) / 該月總訊息量</p>
-          <p className="mt-1">※ 基於 LINE 2025 年高用量方案計費邏輯開發 | 資料僅供參考</p>
+          <p className="mt-1">※ 以公開計費邏輯估算並搭配模擬數據 | 資料僅供參考</p>
         </footer>
       </div>
 
